@@ -1,0 +1,218 @@
+今天我们来写一个可以在 emacs 中听 tts 小说的 mode 。
+
+基本思路是通过 =python-epc= 建立 elisp 和 python 之间的桥梁，然后在 emacs 中调用 =edge-tts= 这个 python 包，以实现收听文本的功能。
+
+我完全不会 elisp ，所以这个 vlog 真的是从零开始写 emacs 插件。
+
+总之先计划一下步骤：
+- [ ] 第一步，获取当前光标下的句子，并使其高亮，等外部程序读完这个句子之后，再进入下一行
+- [ ] 如此循环直到文本结尾
+
+
+看上去很简单，但是对于 emacs 一抹黑的我来说，还是比较困难的。所以先把困难的任务切分成小步骤吧。（背景音乐是 Dark side of the moon ）
+
+对了，这是面向搜索引擎编程。。。
+
+下次再见。
+* TODO 获取光标下的句子 [3/4]
+:LOGBOOK:
+CLOCK: [2022-11-25 Fri 18:37]--[2022-11-25 Fri 19:17] =>  0:40
+:END:
+（用 org-clock 来计时，看我到底要话多少时间在每一个任务上。。。）
+** DONE 通过 =thing-at-point= 获取当前句子[fn:2]
+CLOSED: [2022-11-25 Fri 18:51]
+Refer: https://emacs.stackexchange.com/questions/28367/get-word-at-point
+
+#+begin_src emacs-lisp :tangle yes
+(thing-at-point 'sentence)
+#+end_src
+
+#+RESULTS:
+: (thing-at-point 'sentence)
+: #+end_src
+
+打印出来了。接下来把它包装一下。
+
+#+begin_src emacs-lisp :tangle yes
+(defun my/func ()
+  (interactive)
+  (message
+   (thing-at-point 'sentence)
+   )
+  )
+#+end_src
+
+#+RESULTS:
+: my/func
+
+可以看到光标下的句子出现在了窗口的最底部，也就是 =minibuffer= 中。
+
+接下来设置一个快捷键。
+** DONE 绑定快捷键[fn:1]
+CLOSED: [2022-11-25 Fri 18:51]
+
+因为我用的是 evil-mode 所以绑定快捷键可能会有很多冲突。。。先不管了，看看怎么弄再说。
+
+（刚刚把所有参考链接通过 footnote 的形式放在文档底部了。。。）
+
+回过头来看怎么绑定吧，（刚刚把自动补全给关闭了，感觉在 org-mode 里面弹出中文补全实在是很搞）
+
+可以看到用的是 =global-set-key= 这个方法，用 =SPC h f= 看看它的签名吧。
+
+挺简单的签名：
+#+begin_src emacs-lisp :tangle yes
+(global-set-key KEY COMMAND)
+#+end_src
+
+就绑定在 =M-s= 上吧！
+
+#+begin_src emacs-lisp :tangle yes
+(defun my/func ()
+  (interactive)
+  (message
+   (thing-at-point 'sentence)
+   )
+  )
+
+(global-set-key "\M-s" 'my/func)
+#+end_src
+
+（貌似这个方法在 org-mode 这种富文本的情况下会出现一些问题，所以还是先到 scratch mode 里面进行实验吧。）
+
+（我去弄点文本过来）
+（行太长了，忘了怎么自动换行了）
+好了，在 doom 里面是 =SPC t w= 。刚刚不知道为啥有点卡。
+总之文本已经有了。
+
+可以看到已经成功了，会在最下方打印句子了。
+** DONE 接下来要做的是跳转到下一个句子中[fn:3]
+CLOSED: [2022-11-25 Fri 19:16]
+怪了，没这个方法。
+
+=M-e= 和 =M-a=
+
+=forward-sentence= 方法就可以跳转到下一个句子了。
+
+想办法把它整合进之前的函数中。
+#+begin_src emacs-lisp :tangle yes
+(defun my/func ()
+  (interactive)
+  (message
+   (thing-at-point 'sentence)
+   )
+  )
+
+(global-set-key "\M-s" 'my/func)
+#+end_src
+
+
+用 =message= 模拟 tts 朗读，在 minibuffer 中显示完了之后自动跳转到下一个句子，所以要用到循环，然而 elisp 里面怎么循环来着？要的是一个 =while= 循环。使用的就是 while[fn:4]
+
+先测试一下要怎么用。
+
+#+begin_src emacs-lisp :tangle yes
+(setq fruits (list "apple" "banana" "orange" "watermelon"))
+(while fruits
+  (message (car fruits)
+(setq fruits (cdr fruits))
+)
+
+#+end_src
+
+#+RESULTS:
+
+
+打印到 messge 之后又被程序完成的信息给覆盖了。不晓得怎么打印到 bable 的 result 中，总之 while 已经会用了。
+
+现在的问题是如何判断终止条件。
+
+
+（李杀的博客还挺好用的，感觉是不是看这个网站就可以了？）
+
+判断是否在文件结尾的方法[fn:5] ：
+#+begin_src emacs-lisp :tangle yes
+(message
+(= (point) (point-max))
+ )
+#+end_src
+
+#+RESULTS:
+
+这样是否可行呢？怎么没打印 nil ？
+
+在 =M-x:= 里执行成功了，所以可以用来判断终止条件了。
+
+#+begin_src emacs-lisp :tangle yes
+(defun my/func ()
+  (interactive)
+  (while (< (point) (point-max))
+    (message
+     (thing-at-point 'sentence)
+     )
+    (forward-sentence)
+    )
+  )
+
+(global-set-key "\M-s" 'my/func)
+#+end_src
+
+#+RESULTS:
+: my/func
+
+这就应该就会持续打印直到文件结尾了，希望别是个死循环。
+
+无语，真是个死循环，赶紧用 =C-g= 停掉了，忘记 forward 了。
+
+成功~
+不过为了模拟其间，来个 =sleep=, 不过 elisp 要怎么 sleep ？
+
+=sit-for= ？感觉看文档不太像，先试试看。
+
+#+begin_src emacs-lisp :tangle yes
+(sit-for 5)
+#+end_src
+
+#+RESULTS:
+
+似乎没啥用。
+
+#+begin_src emacs-lisp :tangle yes
+(sleep-for 5)
+#+end_src
+
+#+RESULTS:
+
+是这个没错了。
+
+
+#+begin_src emacs-lisp :tangle yes
+(defun my/func ()
+  (interactive)
+  (while (< (point) (point-max))
+    (sleep-for 3)
+    (message
+     (thing-at-point 'sentence)
+     )
+    (forward-sentence)
+    )
+  )
+
+(global-set-key "\M-s" 'my/func)
+#+end_src
+
+#+RESULTS:
+: my/func
+
+还挺像回事的，不过看看右下角的表，已经录了 38 分钟了啊，之后就下次再搞。
+** TODO 标记文本高亮
+* Footnotes
+
+[fn:5] http://xahlee.info/emacs/emacs/elisp_cursor_position.html
+
+[fn:4] https://www.math.utah.edu/docs/info/emacs-lisp-intro_toc.html#SEC125
+
+[fn:3] https://www.masteringemacs.org/article/effective-editing-movement
+
+[fn:2]https://emacs.stackexchange.com/questions/28367/get-word-at-point
+
+[fn:1] https://stackoverflow.com/questions/29674686/how-to-bind-the-m-s-key-in-emacs
